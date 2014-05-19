@@ -1,0 +1,139 @@
+DASH Users - Statistics
+========================================================
+
+For using this script, first it is needed to download the dash dataset at [link](http://media.polito.it/mmsys14-dataset/neubot-dash-dataset-mmsys14.readme.md).
+After use the python script convert-json-to-csv.py to convert the dataset to csv.
+This script will use the csv file as an input and will produce statistics regarding the dataset.
+
+```{r load_initialization}
+# Libraries, initialization and settings
+library('plyr')
+library('foreach') 
+library('ggplot2') 
+options(scipen=100)
+bps_to_kbps = 1024
+bps_to_mbps = 1048576
+parallel = TRUE
+max_users = 1000                  # maximum number of users returned
+                                  # script will take the max_users that have most samples and meet the criteria
+min_samples = 100                 # minimum ammount of samples a user should have, less than that user will be discarted
+criteria_bw_kbps = 8000           # limit of the criterias
+
+# Load the csv input files
+path = '/Users/karine/phd/data/dash-users/neubot-parsed/'
+
+f = paste(path,'201311-201401.csv',sep='')
+if(file.exists(f)){
+  da = read.csv(f)
+}else{
+  # Load the csv input files
+  files = c('201311.csv','201312.csv','201401.csv')
+  d = data.frame()
+  for(file in files){
+    ft = paste(path,file,sep='')
+    t = read.csv(ft)
+    d = rbind(d,t)
+  }
+  
+  # Remove initial points (adaptation of dash)
+  da = d[d$client_iteration > 4,]
+  write.csv(da, f, quote=FALSE, row.names=FALSE)
+  d = NULL
+}
+
+# Calculate the bandwidth throughput based on bytes received and time elapsed
+da$bw = da$client_received/da$client_elapsed # bytes per second
+da$bw_bits = da$bw*8 # bits per second
+da$bw_mpbs = da$bw_bits/bps_to_mbps
+
+# Create new user id based on ip + uuid
+da$ipuserid = paste(da$client_real_address,'-',da$client_uuid,sep='')
+
+
+```
+
+Number of clients connected over time:
+
+```{r fig.width=4, fig.height=3}
+
+time_users = unique(da[,c('srvr_timestamp','client_uuid')])
+initial_timestamp = min(time_users$srvr_timestamp)
+time_users$seconds = time_users$srvr_timestamp - initial_timestamp
+(z <- Sys.time())
+d_users_timeline = ddply(time_users,~seconds, summarize, .parallel=parallel,
+    users_count=length(client_uuid))
+(z <- Sys.time())
+
+plot(qplot(x=d_users_timeline$seconds,y=d_users_timeline$users_count,xlab="time (seconds)",ylab="#users"))
+
+time_users$hour = as.integer(time_users$seconds/3600)
+d_users_timeline = ddply(time_users,~hour, summarize, .parallel=parallel,
+    users_count=length(client_uuid))
+
+plot(qplot(x=d_users_timeline$hour,y=d_users_timeline$users_count,xlab="time (hours)",ylab="#users"))
+
+```
+
+Users cdf (ip+uuid) by number os measures:
+
+```{r users_cdf_by_measures}
+
+f = paste(path,'user-statistics.csv',sep='')
+if(file.exists(f)){
+  du = read.csv(f)
+}else{
+ # Calculate the number of samples, average and 75% of all users
+  (z <- Sys.time())
+  du = ddply(da,~ipuserid, summarize, .parallel=parallel,
+    samples=length(ipuserid),
+    min=min(bw_bits), 
+  	mean=mean(bw_bits), 	
+  	median=median(bw_bits),
+  	max=max(bw_bits),
+  	stdv=sd(bw_bits),
+    percentile75=quantile(bw_bits,0.75))
+  (z <- Sys.time())
+  write.csv(du, fu, quote=FALSE, row.names=FALSE)
+}
+
+plot(qplot(du$samples, stat = "ecdf", geom = "step", xlab="# measures",ylab="users"))
+```
+
+Users with most samples and average < criteria:
+
+```{r fig.width=3, fig.height=2}
+
+criteria_bw_bps = criteria_bw_kbps*bps_to_kbps
+
+# Users that meet average criteria and samples
+du_avg = du[du$mean < criteria_bw_bps & du$samples >= min_samples,  ] # & !(du$client_uuid %in% black_list_users) not needed since the bw criteria will cut this users
+du_avg = du_avg[order(-du_avg$samples),] # order by the number of samples
+# If we have more than needed we take only max_users with more samples
+if(length(du_avg$ipuserid) > max_users){
+  du_avg = du_avg[1:max_users,]  
+}
+
+for(user_index in 1:length(du_avg$ipuserid)){
+  d1u = da[da$ipuserid == as.character(du_avg$ipuserid[user_index]),]
+  plot(qplot(d1u$bw_mpbs, stat = "ecdf", geom = "step", xlab="bandwidth (Mbps)",ylab="samples")) 
+}
+```
+
+Users with most samples and 75% percentile < criteria:
+
+```{r fig.width=3, fig.height=2}
+
+# Users that meet percentile criteria and samples
+du_perc = du[du$percentile75 < criteria_bw_bps & du$samples >= min_samples,  ]
+du_perc = du_perc[order(-du_perc$samples),] # order by the number of samples
+# If we have more than needed we take only max_users with more samples
+if(length(du_perc$ipuserid) > max_users){
+  du_perc = du_perc[1:max_users,]  
+}
+for(user_index in 1:length(du_perc$ipuserid)){
+  d1u = da[da$ipuserid == as.character(du_perc$ipuserid[user_index]),]
+  plot(qplot(d1u$bw_mpbs, stat = "ecdf", geom = "step", xlab="bandwidth (Mbps)",ylab="samples")) 
+}
+
+```
+
