@@ -37,7 +37,7 @@ criteria_bw_kbps = 8000           # limit of the criterias
 bps_to_kbps = 1024
 bps_to_mbps = 1048576
 
-number_of_samples = 50
+number_of_samples = 100
 
 path = '/Users/karine/phd/data/dash-users/neubot-parsed/'
 
@@ -123,9 +123,17 @@ f_sample_avg = paste(path,'dash_users_avg_samples_',number_of_samples,'.csv',sep
 f_sample_perc = paste(path,'dash_users_75perc_samples_',number_of_samples,'.csv',sep='')
 fab_avg = paste(path,'dash_avgbitrates_avg.dat',sep='')
 fab_perc = paste(path,'dash_avgbitrates_75perc.dat',sep='')
+fmb_avg = paste(path,'dash_medianbitrates_avg.dat',sep='')
+fmb_perc = paste(path,'dash_medianbitrates_75perc.dat',sep='')
+f_consec_sample_avg = paste(path,'dash_users_avg_consec_samples_',number_of_samples,'.csv',sep='')
+f_consec_sample_perc = paste(path,'dash_users_75perc_consec_samples_',number_of_samples,'.csv',sep='')
+f_raw_users_bw_perc = paste(path,'raw_users_bw/dash_users_75perc_',sep='')
 
 if(!file.exists(f_avg) || !file.exists(f_perc) ||
    !file.exists(f_sample_avg) || !file.exists(f_sample_perc) ||
+   !file.exists(f_consec_sample_avg) || !file.exists(f_consec_sample_perc) ||
+   !file.exists(fmb_avg) || !file.exists(fmb_perc) ||
+   !file.exists(f_raw_users_bw_perc) ||
    !file.exists(fab_avg) || !file.exists(fab_perc)){
   criteria_bw_bps = criteria_bw_kbps*bps_to_kbps
   
@@ -192,7 +200,7 @@ if(!(file.exists(f_avg) && file.exists(f_perc))){
 
 Create the average bitrate files:
 
-```{r}
+```{r avg_bitrates}
 
 array2dat <- function(m){
   mfinal = paste(m,sep='',collapse=',')
@@ -210,7 +218,7 @@ if(file.exists(fab_avg) && file.exists(fab_perc)){
 
 Select random samples of bitrates of users:
 
-```{r}
+```{r random_samples}
 
 if(file.exists(f_sample_avg) && file.exists(f_sample_perc)){
   print('Output sample files already exists. Delete manually to recreate.')
@@ -235,6 +243,79 @@ if(file.exists(f_sample_avg) && file.exists(f_sample_perc)){
   
   write.table(mu_avg_sample, file=f_sample_avg, row.names=FALSE, col.names=FALSE, sep=",")
   write.table(mu_perc_sample, file=f_sample_perc, row.names=FALSE, col.names=FALSE, sep=",")
+  
+}    
+```
+
+Select consecutive samples of bitrates of users:
+
+```{r consec_samples}
+
+consec_sample <- function(x,n){
+  return(x[1:n])
+}
+
+if(file.exists(f_consec_sample_avg) && file.exists(f_consec_sample_perc)){
+  print('Output sample files already exists. Delete manually to recreate.')
+}else{
+  
+  da_u_avg_perc = da[da$ipuserid %in% du_avg$ipuserid | da$ipuserid %in% du_perc$ipuserid ,]
+  
+  (z <- Sys.time())
+  users_bw_samples = ddply(da_u_avg_perc,~ipuserid,summarize, .parallel=parallel,
+                          samples=consec_sample(bw_bits,number_of_samples))
+  (z <- Sys.time())
+  
+  mu_avg_sample = matrix(nrow = length(du_avg$ipuserid), ncol = number_of_samples)
+  for(user_index in 1:length(du_avg$ipuserid)){
+    mu_avg_sample[user_index,] = users_bw_samples[users_bw_samples$ipuserid == as.character(du_avg$ipuserid[user_index]),'samples']
+  }
+    
+  mu_perc_sample = matrix(nrow = length(du_perc$ipuserid), ncol = number_of_samples)
+  for(user_index in 1:length(du_perc$ipuserid)){
+    mu_perc_sample[user_index,] = users_bw_samples[users_bw_samples$ipuserid == as.character(du_perc$ipuserid[user_index]),'samples']
+  }
+  
+  write.table(mu_avg_sample, file=f_consec_sample_avg, row.names=FALSE, col.names=FALSE, sep=",")
+  write.table(mu_perc_sample, file=f_consec_sample_perc, row.names=FALSE, col.names=FALSE, sep=",")
+  
+}    
+```
+
+Create the median bitrate files:
+
+```{r median_bitrates}
+
+array2dat <- function(m){
+  mfinal = paste(m,sep='',collapse=',')
+  return(paste('[',mfinal,']',sep='',collapse=','))
+}
+
+if(file.exists(fmb_avg) && file.exists(fmb_perc)){
+  print('Output average files already exists. Delete manually to recreate.')
+}else{
+  write(array2dat(du_avg$median/bps_to_kbps), file=fmb_avg)
+  write(array2dat(du_perc$median/bps_to_kbps), file=fmb_perc)
+}
+
+```
+
+Create raw bandwidth of users:
+
+```{r raw_users_bw}
+
+if(file.exists(f_raw_users_bw_perc)){
+  print('Output sample files already exists. Delete manually to recreate.')
+}else{
+  write('test',f_raw_users_bw_perc)
+  
+  da_u_avg_perc = da[da$ipuserid %in% du_avg$ipuserid | da$ipuserid %in% du_perc$ipuserid ,]
+  da_u_avg_perc$bw_kbps = da_u_avg_perc$bw_bits/bps_to_kbps
+  
+  for(user_index in 1:length(du_perc$ipuserid)){
+    f_raw_one_user_bw_perc = paste(f_raw_users_bw_perc,'_u',user_index,'.csv',sep='')
+    write.table(da_u_avg_perc[da_u_avg_perc$ipuserid == as.character(du_perc$ipuserid[user_index]),'bw_kbps'], file=f_raw_one_user_bw_perc, row.names=FALSE, col.names=FALSE, sep=",")
+  }
   
 }    
 ```
