@@ -28,7 +28,8 @@ Which means two different output files, accordingly to the users subset, will be
 ```{r initialization_settings}
 # Settings
 #rates_kbps = seq(150,12600,by=50) # dash bitrates 
-rates_kbps = c(seq(100,3000,by=100),seq(3500,9000,by=500)) # new dash bitrates
+# rates_kbps = c(seq(100,3000,by=100),seq(3500,9000,by=500)) # new dash bitrates
+#rates_kbps = c(seq(100,3000,by=100),seq(3250,9000,by=250)) # new dash bitrates
 max_users = 500                   # maximum number of users returned
                                   # script will take the max_users that have most samples and meet the criteria
 min_samples = 100                 # minimum ammount of samples a user should have, less than that user will be discarted
@@ -40,6 +41,8 @@ bps_to_mbps = 1048576
 number_of_samples = 100
 
 path = '/Users/karine/phd/data/dash-users/neubot-parsed/'
+
+rates_kbps = as.vector(read.csv(paste(path,'scenarios_CDF/rates_sc_neutral_dash_users_75perc_bias_percentileDispAssign.txt',sep=''))$rates)
 
 # Libraries
 library('plyr')
@@ -108,9 +111,9 @@ Verification of some users:
 
 ```{r user_example}
 
-user_index = 1
-d1u = da[da$ipuserid == as.character(du$ipuserid[user_index]),]
-plot(qplot(d1u$bw_mpbs, stat = "ecdf", geom = "step", xlab="bandwidth (Mbps)",ylab="samples"))
+# user_index = 1
+# d1u = da[da$ipuserid == as.character(du$ipuserid[user_index]),]
+# plot(qplot(d1u$bw_mpbs, stat = "ecdf", geom = "step", xlab="bandwidth (Mbps)",ylab="samples"))
 
 ```
 
